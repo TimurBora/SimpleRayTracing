@@ -153,6 +153,13 @@ Vec3f CalculateFinalColor(
     const Vec3f &reflectColor,
     const Vec3f &refractColor);
 
+bool IsInShadow(
+    const Vec3f &N,
+    const Vec3f &point,
+    const Vec3f &lightDirection,
+    const float &lightDistance,
+    const std::vector<Sphere> &spheres);
+
 Vec3f Reflect(const Vec3f &direction, const Vec3f &N) {
     return direction - N * 2.f * (direction * N);
 }
@@ -230,16 +237,12 @@ Vec3f CastRay(
             ambientLightIntensity += light->getIntensity();
             continue;
         }
+
         Vec3f lightDirection = light->getDirection(point);
-        float reflect = Reflect(lightDirection, N) * direction;
         float lightDistance = light->getDistance(point);
+        float reflect = Reflect(lightDirection, N) * direction;
 
-        Vec3f shadowOrigin = lightDirection * N < 0 ? point - N * 1e-3 : point + N * 1e-3;
-        Vec3f shadowPoint, shadowN;
-
-        Material tempMaterial;
-        if (SceneIntersect(shadowOrigin, lightDirection, spheres, shadowPoint, shadowN, tempMaterial) &&
-            (shadowPoint - shadowOrigin).norm() < lightDistance) {
+        if (IsInShadow(N, point, lightDirection, lightDistance, spheres)) {
             continue;
         }
 
@@ -251,6 +254,22 @@ Vec3f CastRay(
         material, ambientLightIntensity,
         diffuseLightIntensity, specularLightIntensity,
         reflectColor, refractColor);
+}
+
+bool IsInShadow(
+    const Vec3f &N,
+    const Vec3f &point,
+    const Vec3f &lightDirection,
+    const float &lightDistance,
+    const std::vector<Sphere> &spheres) {
+
+    Vec3f shadowOrigin = AdjustRayOrigin(lightDirection, point, N);
+    Vec3f shadowPoint, shadowN;
+
+    Material tempMaterial;
+
+    return SceneIntersect(shadowOrigin, lightDirection, spheres, shadowPoint, shadowN, tempMaterial) &&
+           (shadowPoint - shadowOrigin).norm() < lightDistance;
 }
 
 Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N) {
@@ -319,7 +338,7 @@ int main() {
     lights.push_back(std::make_shared<PointLight>(PointLight(1.8, Vec3f(30, 50, -25))));
     lights.push_back(std::make_shared<PointLight>(PointLight(1.7, Vec3f(30, 20, 30))));
     lights.push_back(std::make_shared<AmbientLight>(AmbientLight(0.1)));
-    // lights.push_back(std::make_shared<DirectionalLight>(DirectionalLight(2, Vec3f(-0.57, 0.24, 0.78))));
+    // lights.push_back(std::make_shared<DirectionalLight>(DirectionalLight(5, Vec3f(-0.57, 0.24, 0.78))));
 
     Render(spheres, lights);
 

@@ -1,60 +1,74 @@
+
 #include "geometry.h"
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #define M_PI 3.14159265358979323846
 
-enum LightType {
-    Ambient,
-    Point,
-    Directional,
-};
+class Light {
+public:
+    Light(float intensity) : intensity(intensity) {}
+    virtual ~Light() = default;
 
-struct AmbientLight {
-    const float &intensity;
-};
+    virtual Vec3f getDirection(const Vec3f &point) const = 0;
+    virtual float getDistance(const Vec3f &point) const = 0;
+    virtual bool isAmbient() const { return false; }
+    float getIntensity() const { return intensity; }
 
-struct PointLight {
-    const Vec3f &position;
-    const float &intensity;
-};
-
-struct DirectionalLight {
-    const Vec3f &direction;
-    const float &intensity;
-};
-
-// using LightEnum = std::variant<AmbientLight, PointLight, DirectionalLight>;
-
-struct Light {
-    Light(LightType lightType, const float &intensity)
-        : lightType(lightType), intensity(intensity), direction(), position() {
-        if (lightType != Ambient) {
-            throw std::invalid_argument("This constructor is only for Ambient lights");
-        }
-    }
-
-    Light(LightType lightType, const Vec3f &position, const float &intensity)
-        : lightType(lightType), position(position), intensity(intensity), direction() {
-        if (lightType != Point) {
-            throw std::invalid_argument("This constructor is only for Point lights");
-        }
-    }
-
-    // Light(LightType lightType, const Vec3f &direction, const float &intensity)
-    //     : lightType(lightType), direction(direction), intensity(intensity), position() {
-    //     if (lightType != Directional) {
-    //         throw std::invalid_argument("This constructor is only for Directional lights");
-    //     }
-    // }
-
-    LightType lightType;
-    Vec3f position;
-    Vec3f direction;
+protected:
     float intensity;
+};
+
+class AmbientLight : public Light {
+public:
+    AmbientLight(float intensity) : Light{intensity} {}
+
+    Vec3f getDirection(const Vec3f & /*point*/) const override {
+        return Vec3f(0, 0, 0);
+    }
+
+    float getDistance(const Vec3f & /*point*/) const override {
+        return 0.0f;
+    }
+
+    bool isAmbient() const override { return true; }
+};
+
+class PointLight : public Light {
+public:
+    PointLight(float intensity, const Vec3f &position) : Light{intensity}, position(position) {}
+
+    Vec3f getDirection(const Vec3f &point) const override {
+        return (position - point).normalize();
+    }
+
+    float getDistance(const Vec3f &point) const override {
+        return (position - point).norm();
+    }
+
+private:
+    Vec3f position;
+};
+
+class DirectionalLight : public Light {
+public:
+    DirectionalLight(float intensity, const Vec3f &direction) : Light{intensity}, direction(direction) {}
+
+    Vec3f getDirection(const Vec3f &point) const override {
+        return direction;
+    }
+
+    float getDistance(const Vec3f &point) const override {
+        return std::numeric_limits<float>::infinity();
+    }
+
+private:
+    Vec3f direction;
 };
 
 struct Material {
@@ -111,6 +125,34 @@ struct Sphere {
     }
 };
 
+Vec3f Reflect(const Vec3f &direction, const Vec3f &N);
+Vec3f Refract(const Vec3f &direction, const Vec3f &N, const float &refractiveIndex);
+Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N);
+void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_ptr<Light>> &lights);
+
+bool SceneIntersect(
+    const Vec3f &origin,
+    const Vec3f &direction,
+    const std::vector<Sphere> &spheres,
+    Vec3f &hit,
+    Vec3f &N,
+    Material &material);
+
+Vec3f CastRay(
+    const Vec3f &origin,
+    const Vec3f &direction,
+    const std::vector<Sphere> &spheres,
+    const std::vector<std::shared_ptr<Light>> &lights,
+    size_t depth);
+
+Vec3f CalculateFinalColor(
+    const Material &material,
+    const float &ambientLightIntensity,
+    const float &diffuseLightIntensity,
+    const float &specularLightIntensity,
+    const Vec3f &reflectColor,
+    const Vec3f &refractColor);
+
 Vec3f Reflect(const Vec3f &direction, const Vec3f &N) {
     return direction - N * 2.f * (direction * N);
 }
@@ -156,7 +198,7 @@ Vec3f CastRay(
     const Vec3f &origin,
     const Vec3f &direction,
     const std::vector<Sphere> &spheres,
-    const std::vector<Light> lights,
+    const std::vector<std::shared_ptr<Light>> &lights,
     size_t depth = 0) {
 
     Vec3f point, N;
@@ -167,24 +209,30 @@ Vec3f CastRay(
     }
 
     Vec3f reflectDirection = Reflect(direction, N).normalize();
-    Vec3f reflectOrigin = reflectDirection * N < 0 ? point - N * 1e-3 : point + N * 1e-3;
-    Vec3f reflectColor = CastRay(reflectOrigin, reflectDirection, spheres, lights, depth + 1);
+    Vec3f reflectOrigin = AdjustRayOrigin(reflectDirection, point, N);
+    Vec3f reflectColor = CastRay(
+        reflectOrigin,
+        reflectDirection,
+        spheres, lights, depth + 1);
 
     Vec3f refractDirection = Refract(direction, N, material.refractiveIndex);
-    Vec3f refractOrigin = refractDirection * N < 0 ? point - N * 1e-3 : point + N * 1e-3;
-    Vec3f refractColor = CastRay(refractOrigin, refractDirection, spheres, lights, depth + 1);
+    Vec3f refractOrigin = AdjustRayOrigin(refractDirection, point, N);
+    Vec3f refractColor = CastRay(
+        refractOrigin,
+        refractDirection,
+        spheres, lights, depth + 1);
 
     float diffuseLightIntensity = 0;
     float specularLightIntensity = 0;
     float ambientLightIntensity = 0;
-    for (size_t i = 0; i < lights.size(); i++) {
-        if (lights[i].lightType == Ambient) {
-            ambientLightIntensity += lights[i].intensity;
+    for (const auto &light : lights) {
+        if (light->isAmbient()) {
+            ambientLightIntensity += light->getIntensity();
             continue;
         }
-        Vec3f lightDirection = (lights[i].position - point).normalize();
+        Vec3f lightDirection = light->getDirection(point);
         float reflect = Reflect(lightDirection, N) * direction;
-        float lightDistance = (lights[i].position - point).norm();
+        float lightDistance = light->getDistance(point);
 
         Vec3f shadowOrigin = lightDirection * N < 0 ? point - N * 1e-3 : point + N * 1e-3;
         Vec3f shadowPoint, shadowN;
@@ -195,9 +243,27 @@ Vec3f CastRay(
             continue;
         }
 
-        diffuseLightIntensity += std::max(0.0f, lightDirection * N) * lights[i].intensity;
-        specularLightIntensity += powf(std::max(0.0f, reflect), material.specularExponent) * lights[i].intensity;
+        diffuseLightIntensity += std::max(0.0f, lightDirection * N) * light->getIntensity();
+        specularLightIntensity += powf(std::max(0.0f, reflect), material.specularExponent) * light->getIntensity();
     }
+
+    return CalculateFinalColor(
+        material, ambientLightIntensity,
+        diffuseLightIntensity, specularLightIntensity,
+        reflectColor, refractColor);
+}
+
+Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N) {
+    return direction * N < 0 ? point - N * 1e-3 : point + N * 1e-3;
+}
+
+Vec3f CalculateFinalColor(
+    const Material &material,
+    const float &ambientLightIntensity,
+    const float &diffuseLightIntensity,
+    const float &specularLightIntensity,
+    const Vec3f &reflectColor,
+    const Vec3f &refractColor) {
 
     return material.ambientColor * ambientLightIntensity +
            material.diffuseColor * diffuseLightIntensity * material.albedo[0] +
@@ -206,7 +272,7 @@ Vec3f CastRay(
            refractColor * material.albedo[3];
 }
 
-void Render(const std::vector<Sphere> &spheres, const std::vector<Light> &lights) {
+void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_ptr<Light>> &lights) {
     const int width = 1024;
     const int height = 728;
     const float fov = M_PI / 2.0;
@@ -246,13 +312,14 @@ int main() {
     spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, glass));
     spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, redRubber));
     spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
-    spheres.push_back(Sphere(Vec3f(-5, -9000, -30), 8995, mirror));
+    spheres.push_back(Sphere(Vec3f(-5, -9000, -30), 8995, ivory));
 
-    std::vector<Light> lights;
-    lights.push_back(Light(Point, Vec3f(-20, 20, 20), 1.5));
-    lights.push_back(Light(Point, Vec3f(30, 50, -25), 1.8));
-    lights.push_back(Light(Point, Vec3f(30, 20, 30), 1.7));
-    lights.push_back(Light(Ambient, 0.1));
+    std::vector<std::shared_ptr<Light>> lights;
+    lights.push_back(std::make_shared<PointLight>(PointLight(1.5, Vec3f(-20, 20, 20))));
+    lights.push_back(std::make_shared<PointLight>(PointLight(1.8, Vec3f(30, 50, -25))));
+    lights.push_back(std::make_shared<PointLight>(PointLight(1.7, Vec3f(30, 20, 30))));
+    lights.push_back(std::make_shared<AmbientLight>(AmbientLight(0.1)));
+    // lights.push_back(std::make_shared<DirectionalLight>(DirectionalLight(2, Vec3f(-0.57, 0.24, 0.78))));
 
     Render(spheres, lights);
 

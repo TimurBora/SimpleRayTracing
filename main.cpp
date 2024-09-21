@@ -12,7 +12,9 @@
 #define M_PI 3.14159265358979323846
 
 struct Material;
-struct Sphere;
+class Shape;
+class Box;
+class Sphere;
 class Light;
 class PointLight;
 class DirectionalLight;
@@ -22,12 +24,12 @@ class AmbientClass;
 Vec3f Reflect(const Vec3f &direction, const Vec3f &N);
 Vec3f Refract(const Vec3f &direction, const Vec3f &N, const float &refractiveIndex);
 Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N);
-void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_ptr<Light>> &lights);
+void Render(const std::vector<std::shared_ptr<Shape>> &shapes, const std::vector<std::shared_ptr<Light>> &lights);
 
 bool SceneIntersect(
     const Vec3f &origin,
     const Vec3f &direction,
-    const std::vector<Sphere> &spheres,
+    const std::vector<std::shared_ptr<Shape>> &shapes,
     Vec3f &hit,
     Vec3f &N,
     Material &material);
@@ -35,7 +37,7 @@ bool SceneIntersect(
 Vec3f CastRay(
     const Vec3f &origin,
     const Vec3f &direction,
-    const std::vector<Sphere> &spheres,
+    const std::vector<std::shared_ptr<Shape>> &shapes,
     const std::vector<std::shared_ptr<Light>> &lights,
     size_t depth);
 
@@ -52,7 +54,7 @@ bool IsInShadow(
     const Vec3f &point,
     const Vec3f &lightDirection,
     const float &lightDistance,
-    const std::vector<Sphere> &spheres);
+    const std::vector<std::shared_ptr<Shape>> &shapes);
 struct Material {
     Material(
         const Vec4f &a,
@@ -484,14 +486,14 @@ int main() {
     // spheres.push_back(Sphere(Vec3f(-5, -900, -30), 895, ivory));
 
     std::vector<std::shared_ptr<Shape>> shapes;
-    shapes.push_back(std::make_shared<Sphere>(Vec3f(-3, 0, -16), 2, ivory));
-    shapes.push_back(std::make_shared<Sphere>(Vec3f(-1.0, -1.5, -12), 2, glass));
-    shapes.push_back(std::make_shared<Sphere>(Vec3f(1.5, -0.5, -18), 3, redRubber));
-    shapes.push_back(std::make_shared<Sphere>(Vec3f(7, 5, -18), 4, mirror));
-    shapes.push_back(std::make_shared<Sphere>(Vec3f(-5, -900, -30), 895, ivory));
+    // shapes.push_back(std::make_shared<Sphere>(Vec3f(-3, 0, -16), 2, ivory));
+    // shapes.push_back(std::make_shared<Sphere>(Vec3f(-1.0, -1.5, -12), 2, glass));
+    // shapes.push_back(std::make_shared<Sphere>(Vec3f(1.5, -0.5, -18), 3, redRubber));
+    // shapes.push_back(std::make_shared<Sphere>(Vec3f(7, 5, -18), 4, mirror));
+    // shapes.push_back(std::make_shared<Sphere>(Vec3f(-5, -900, -30), 895, ivory));
 
-    shapes.push_back(std::make_shared<Box>(Vec3f(1, 1, 1), Vec3f(-1, -1, -1), mirror));
-    shapes.push_back(std::make_shared<Box>(Vec3f(2, 2, 2), Vec3f(0, 0, 0), ivory));
+    shapes.push_back(std::make_shared<Box>(Vec3f(2, 2, 2), Vec3f(-2, -2, -2), mirror));
+    // shapes.push_back(std::make_shared<Box>(Vec3f(2, 2, 2), Vec3f(0, 0, 0), ivory));
 
     std::vector<std::shared_ptr<Light>> lights;
     lights.push_back(std::make_shared<PointLight>(PointLight(1.5, Vec3f(-20, 20, 20))));

@@ -76,14 +76,24 @@ struct Material {
 
 class Shape {
 public:
-    virtual ~Shape() = default; // Virtual destructor for proper cleanup
+    virtual ~Shape() = default;
+
+    virtual const Material &GetMaterial() const {
+        return material;
+    }
+
+    virtual const Vec3f GetNormal(const Vec3f &hitPoint) const = 0;
+
     virtual bool RayIntersect(
         const Vec3f &origin,
         const Vec3f &direction,
-        float &t0) const = 0; // Pure virtual method
+        float &t0) const = 0;
+
+private:
+    Material material;
 };
 
-class Sphere : Shape {
+class Sphere : public Shape {
 private:
     Vec3f center;
     float radius;
@@ -100,12 +110,16 @@ public:
         return center;
     }
 
-    const Material &GetMaterial() const {
+    const float &GetRadius() const {
+        return radius;
+    }
+
+    const Material &GetMaterial() const override {
         return material;
     }
 
-    const float &GetRadius() const {
-        return radius;
+    const Vec3f GetNormal(const Vec3f &hitPoint) const override {
+        return (hitPoint - center).normalize();
     }
 
     bool RayIntersect(
@@ -136,7 +150,7 @@ public:
     }
 };
 
-class Box : Shape {
+class Box : public Shape {
 private:
     Vec3f boxMax;
     Vec3f boxMin;
@@ -148,8 +162,26 @@ public:
         Vec3f boxMin,
         Material material) : boxMax(boxMax), boxMin(boxMin), material(material) {}
 
-    const Material &GetMaterial() const {
+    const Material &GetMaterial() const override {
         return material;
+    }
+
+    const Vec3f GetNormal(const Vec3f &hitPoint) const override {
+        Vec3f normal;
+        if (hitPoint.x == boxMin.x)
+            normal = Vec3f(-1, 0, 0); // левая грань
+        else if (hitPoint.x == boxMax.x)
+            normal = Vec3f(1, 0, 0); // правая грань
+        else if (hitPoint.y == boxMin.y)
+            normal = Vec3f(0, -1, 0); // нижняя грань
+        else if (hitPoint.y == boxMax.y)
+            normal = Vec3f(0, 1, 0); // верхняя грань
+        else if (hitPoint.z == boxMin.z)
+            normal = Vec3f(0, 0, -1); // задняя грань
+        else if (hitPoint.z == boxMax.z)
+            normal = Vec3f(0, 0, 1); // передняя грань
+
+        return normal;
     }
 
     bool RayIntersect(
@@ -299,20 +331,20 @@ Vec3f Refract(const Vec3f &direction, const Vec3f &N, const float &refractiveInd
 bool SceneIntersect(
     const Vec3f &origin,
     const Vec3f &direction,
-    const std::vector<Sphere> &spheres,
+    const std::vector<std::shared_ptr<Shape>> &shapes,
     Vec3f &hit,
     Vec3f &N,
     Material &material) {
 
     float spheresDist = std::numeric_limits<float>::max();
 
-    for (size_t i = 0; i < spheres.size(); i++) {
+    for (size_t i = 0; i < shapes.size(); i++) {
         float dist_i;
-        if (spheres[i].RayIntersect(origin, direction, dist_i) && dist_i < spheresDist) {
+        if (shapes[i]->RayIntersect(origin, direction, dist_i) && dist_i < spheresDist) {
             spheresDist = dist_i;
             hit = origin + direction * dist_i;
-            N = (hit - spheres[i].GetCenter()).normalize();
-            material = spheres[i].GetMaterial();
+            N = shapes[i]->GetNormal(hit);
+            material = shapes[i]->GetMaterial();
         }
     }
 
@@ -322,14 +354,14 @@ bool SceneIntersect(
 Vec3f CastRay(
     const Vec3f &origin,
     const Vec3f &direction,
-    const std::vector<Sphere> &spheres,
+    const std::vector<std::shared_ptr<Shape>> &shapes,
     const std::vector<std::shared_ptr<Light>> &lights,
     size_t depth = 0) {
 
     Vec3f point, N;
     Material material;
 
-    if (depth > 4 || !SceneIntersect(origin, direction, spheres, point, N, material)) {
+    if (depth > 4 || !SceneIntersect(origin, direction, shapes, point, N, material)) {
         return Vec3f(0.2, 0.7, 0.8);
     }
 
@@ -338,14 +370,14 @@ Vec3f CastRay(
     Vec3f reflectColor = CastRay(
         reflectOrigin,
         reflectDirection,
-        spheres, lights, depth + 1);
+        shapes, lights, depth + 1);
 
     Vec3f refractDirection = Refract(direction, N, material.refractiveIndex);
     Vec3f refractOrigin = AdjustRayOrigin(refractDirection, point, N);
     Vec3f refractColor = CastRay(
         refractOrigin,
         refractDirection,
-        spheres, lights, depth + 1);
+        shapes, lights, depth + 1);
 
     float diffuseLightIntensity = 0;
     float specularLightIntensity = 0;
@@ -360,7 +392,7 @@ Vec3f CastRay(
         float lightDistance = light->getDistance(point);
         float reflect = Reflect(lightDirection, N) * direction;
 
-        if (IsInShadow(N, point, lightDirection, lightDistance, spheres)) {
+        if (IsInShadow(N, point, lightDirection, lightDistance, shapes)) {
             continue;
         }
 
@@ -379,14 +411,14 @@ bool IsInShadow(
     const Vec3f &point,
     const Vec3f &lightDirection,
     const float &lightDistance,
-    const std::vector<Sphere> &spheres) {
+    const std::vector<std::shared_ptr<Shape>> &shapes) {
 
     Vec3f shadowOrigin = AdjustRayOrigin(lightDirection, point, N);
     Vec3f shadowPoint, shadowN;
 
     Material tempMaterial;
 
-    return SceneIntersect(shadowOrigin, lightDirection, spheres, shadowPoint, shadowN, tempMaterial) &&
+    return SceneIntersect(shadowOrigin, lightDirection, shapes, shadowPoint, shadowN, tempMaterial) &&
            (shadowPoint - shadowOrigin).norm() < lightDistance;
 }
 
@@ -409,7 +441,7 @@ Vec3f CalculateFinalColor(
            refractColor * material.albedo[3];
 }
 
-void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_ptr<Light>> &lights) {
+void Render(const std::vector<std::shared_ptr<Shape>> &shapes, const std::vector<std::shared_ptr<Light>> &lights) {
     const int width = 1280;
     const int height = 720;
     const float fov = M_PI / 2.0;
@@ -421,7 +453,7 @@ void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_pt
             float y = -(2 * (j + 0.5) / (float)height - 1) * tan(fov / 2.);
             Vec3f direction = Vec3f(x, y, -1).normalize();
 
-            framebuffer[i + j * width] = CastRay(Vec3f(0, 0, 0), direction, spheres, lights);
+            framebuffer[i + j * width] = CastRay(Vec3f(0, 0, 0), direction, shapes, lights);
         }
     }
 
@@ -444,12 +476,12 @@ int main() {
     Material redRubber(Vec4f(0.9, 0.1, 0.0, 0.0), Vec3f(0.3, 0.1, 0.1), ambientColor, 10.0, 1.0);
     Material mirror(Vec4f(0.0, 10.0, 0.8, 0.0), Vec3f(1.0, 1.0, 1.0), ambientColor, 1425.0, 1.0);
 
-    std::vector<Sphere> spheres;
-    spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
-    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, glass));
-    spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, redRubber));
-    spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
-    spheres.push_back(Sphere(Vec3f(-5, -900, -30), 895, ivory));
+    // std::vector<Sphere> spheres;
+    // spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
+    // spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, glass));
+    // spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, redRubber));
+    // spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
+    // spheres.push_back(Sphere(Vec3f(-5, -900, -30), 895, ivory));
 
     std::vector<std::shared_ptr<Shape>> shapes;
     shapes.push_back(std::make_shared<Sphere>(Vec3f(-3, 0, -16), 2, ivory));
@@ -469,7 +501,7 @@ int main() {
     lights.push_back(std::make_shared<AmbientLight>(AmbientLight(0.1)));
     // lights.push_back(std::make_shared<DirectionalLight>(DirectionalLight(0.1, Vec3f(-6, 5, 0.78))));
 
-    Render(spheres, lights);
+    Render(shapes, lights);
 
     return 0;
 }

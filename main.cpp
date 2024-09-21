@@ -11,6 +11,10 @@
 
 #define M_PI 3.14159265358979323846
 
+const int MAX_DEPTH = 4;
+const double EPSILON = 1e-3;
+const Vec3f BACKGROUND_COLOR = Vec3f(0.2, 0.7, 0.8);
+
 struct Material;
 class Shape;
 class Box;
@@ -22,7 +26,7 @@ class SphereLight;
 class AmbientClass;
 
 Vec3f Reflect(const Vec3f &direction, const Vec3f &N);
-Vec3f Refract(const Vec3f &direction, const Vec3f &N, const float &refractiveIndex);
+Vec3f Refract(const Vec3f &direction, const Vec3f &N, const double &refractiveIndex);
 Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N);
 void Render(const std::vector<std::shared_ptr<Shape>> &shapes, const std::vector<std::shared_ptr<Light>> &lights);
 
@@ -43,9 +47,9 @@ Vec3f CastRay(
 
 Vec3f CalculateFinalColor(
     const Material &material,
-    const float &ambientLightIntensity,
-    const float &diffuseLightIntensity,
-    const float &specularLightIntensity,
+    const double &ambientLightIntensity,
+    const double &diffuseLightIntensity,
+    const double &specularLightIntensity,
     const Vec3f &reflectColor,
     const Vec3f &refractColor);
 
@@ -53,34 +57,40 @@ bool IsInShadow(
     const Vec3f &N,
     const Vec3f &point,
     const Vec3f &lightDirection,
-    const float &lightDistance,
+    const double &lightDistance,
     const std::vector<std::shared_ptr<Shape>> &shapes);
+
 struct Material {
     Material(
         const Vec4f &a,
         const Vec3f &color,
         const Vec3f &ambient,
-        const float &spec,
-        const float &rf) : albedo(a),
-                           diffuseColor(color),
-                           specularExponent(spec),
-                           refractiveIndex(rf),
-                           ambientColor(ambient) {}
+        const double &spec,
+        const double &rf) : albedo(a),
+                            diffuseColor(color),
+                            specularExponent(spec),
+                            refractiveIndex(rf),
+                            ambientColor(ambient) {}
 
     Material() : albedo(1, 0, 0, 0), diffuseColor(), specularExponent(), refractiveIndex(1.0), ambientColor(0.1, 0.1, 0.1) {}
 
     Vec4f albedo;
     Vec3f diffuseColor;
     Vec3f ambientColor;
-    float specularExponent;
-    float refractiveIndex;
+    double specularExponent;
+    double refractiveIndex;
 };
 
 class Shape {
+protected:
+    Material material;
+
 public:
     virtual ~Shape() = default;
 
-    virtual const Material &GetMaterial() const {
+    Shape(const Material &material) : material(material) {}
+
+    const Material &GetMaterial() const {
         return material;
     }
 
@@ -89,35 +99,28 @@ public:
     virtual bool RayIntersect(
         const Vec3f &origin,
         const Vec3f &direction,
-        float &t0) const = 0;
-
-private:
-    Material material;
+        double &t0) const = 0;
 };
 
 class Sphere : public Shape {
 private:
     Vec3f center;
-    float radius;
+    double radius;
 
     Material material;
 
 public:
     Sphere(
         const Vec3f &center,
-        const float &radius,
-        const Material &material) : center(center), radius(radius), material(material) {}
+        const double &radius,
+        const Material &material) : center(center), radius(radius), Shape(material) {}
 
     const Vec3f &GetCenter() const {
         return center;
     }
 
-    const float &GetRadius() const {
+    const double &GetRadius() const {
         return radius;
-    }
-
-    const Material &GetMaterial() const override {
-        return material;
     }
 
     const Vec3f GetNormal(const Vec3f &hitPoint) const override {
@@ -127,19 +130,19 @@ public:
     bool RayIntersect(
         const Vec3f &origin,
         const Vec3f &direction,
-        float &t0) const override {
+        double &t0) const override {
 
         Vec3f L = center - origin;
-        float tca = L * direction;
-        float d2 = L * L - tca * tca;
+        double tca = L * direction;
+        double d2 = L * L - tca * tca;
 
         if (d2 > radius * radius) {
             return false;
         }
 
-        float thc = sqrtf(radius * radius - d2);
+        double thc = sqrtf(radius * radius - d2);
         t0 = tca - thc;
-        float t1 = tca + thc;
+        double t1 = tca + thc;
 
         if (t0 < 0) {
             t0 = t1;
@@ -148,6 +151,7 @@ public:
         if (t0 < 0) {
             return false;
         }
+
         return true;
     }
 };
@@ -162,25 +166,22 @@ public:
     Box(
         Vec3f boxMax,
         Vec3f boxMin,
-        Material material) : boxMax(boxMax), boxMin(boxMin), material(material) {}
-
-    const Material &GetMaterial() const override {
-        return material;
-    }
+        Material material) : boxMax(boxMax), boxMin(boxMin), Shape(material) {}
 
     const Vec3f GetNormal(const Vec3f &hitPoint) const override {
+
         Vec3f normal;
-        if (hitPoint.x == boxMin.x)
+        if (std::abs(hitPoint.x - boxMin.x) < EPSILON)
             normal = Vec3f(-1, 0, 0); // левая грань
-        else if (hitPoint.x == boxMax.x)
+        else if (std::abs(hitPoint.x - boxMax.x) < EPSILON)
             normal = Vec3f(1, 0, 0); // правая грань
-        else if (hitPoint.y == boxMin.y)
+        else if (std::abs(hitPoint.y - boxMin.y) < EPSILON)
             normal = Vec3f(0, -1, 0); // нижняя грань
-        else if (hitPoint.y == boxMax.y)
+        else if (std::abs(hitPoint.y - boxMax.y) < EPSILON)
             normal = Vec3f(0, 1, 0); // верхняя грань
-        else if (hitPoint.z == boxMin.z)
+        else if (std::abs(hitPoint.x - boxMin.z) < EPSILON)
             normal = Vec3f(0, 0, -1); // задняя грань
-        else if (hitPoint.z == boxMax.z)
+        else if (std::abs(hitPoint.z - boxMax.z) < EPSILON)
             normal = Vec3f(0, 0, 1); // передняя грань
 
         return normal;
@@ -189,19 +190,19 @@ public:
     bool RayIntersect(
         const Vec3f &origin,
         const Vec3f &direction,
-        float &t0) const override {
+        double &t0) const override {
 
         Vec3f inversDirection = Vec3f(1.0 / direction.x, 1.0 / direction.y, 1.0 / direction.z);
 
-        float t1 = (boxMin.x - origin.x) * inversDirection.x;
-        float t2 = (boxMax.x - origin.x) * inversDirection.x;
-        float t3 = (boxMin.y - origin.y) * inversDirection.y;
-        float t4 = (boxMax.y - origin.y) * inversDirection.y;
-        float t5 = (boxMin.z - origin.z) * inversDirection.z;
-        float t6 = (boxMax.z - origin.z) * inversDirection.z;
+        double t1 = (boxMin.x - origin.x) * inversDirection.x;
+        double t2 = (boxMax.x - origin.x) * inversDirection.x;
+        double t3 = (boxMin.y - origin.y) * inversDirection.y;
+        double t4 = (boxMax.y - origin.y) * inversDirection.y;
+        double t5 = (boxMin.z - origin.z) * inversDirection.z;
+        double t6 = (boxMax.z - origin.z) * inversDirection.z;
 
-        float tmin = std::max(std::max(std::min(t1, t2), std::min(t3, t4)), std::min(t5, t6));
-        float tmax = std::min(std::min(std::max(t1, t2), std::max(t3, t4)), std::max(t5, t6));
+        double tmin = std::max(std::max(std::min(t1, t2), std::min(t3, t4)), std::min(t5, t6));
+        double tmax = std::min(std::min(std::max(t1, t2), std::max(t3, t4)), std::max(t5, t6));
 
         if (tmax < 0) {
             return false;
@@ -220,29 +221,35 @@ public:
     }
 };
 
-class Light {
+class InfinityPlane : Shape {
 public:
-    Light(float intensity) : intensity(intensity) {}
+private:
+    Vec3f N;
+};
+
+class Light {
+protected:
+    double intensity;
+
+public:
+    Light(double intensity) : intensity(intensity) {}
     virtual ~Light() = default;
 
     virtual Vec3f getDirection(const Vec3f &point) const = 0;
-    virtual float getDistance(const Vec3f &point) const = 0;
+    virtual double getDistance(const Vec3f &point) const = 0;
     virtual bool isAmbient() const { return false; }
-    float getIntensity() const { return intensity; }
-
-protected:
-    float intensity;
+    double getIntensity() const { return intensity; }
 };
 
 class AmbientLight : public Light {
 public:
-    AmbientLight(float intensity) : Light{intensity} {}
+    AmbientLight(double intensity) : Light{intensity} {}
 
     Vec3f getDirection(const Vec3f & /*point*/) const override {
         return Vec3f(0, 0, 0);
     }
 
-    float getDistance(const Vec3f & /*point*/) const override {
+    double getDistance(const Vec3f & /*point*/) const override {
         return 0.0f;
     }
 
@@ -250,62 +257,62 @@ public:
 };
 
 class PointLight : public Light {
+private:
+    Vec3f position;
+
 public:
-    PointLight(float intensity, const Vec3f &position) : Light{intensity}, position(position) {}
+    PointLight(double intensity, const Vec3f &position) : Light{intensity}, position(position) {}
 
     Vec3f getDirection(const Vec3f &point) const override {
         return (position - point).normalize();
     }
 
-    float getDistance(const Vec3f &point) const override {
+    double getDistance(const Vec3f &point) const override {
         return (position - point).norm();
     }
-
-private:
-    Vec3f position;
 };
 
 class DirectionalLight : public Light {
+private:
+    Vec3f direction;
+
 public:
-    DirectionalLight(float intensity, const Vec3f &direction) : Light{intensity}, direction(direction) {}
+    DirectionalLight(double intensity, const Vec3f &direction) : Light{intensity}, direction(direction) {}
 
     Vec3f getDirection(const Vec3f &point) const override {
         return direction;
     }
 
-    float getDistance(const Vec3f &point) const override {
-        return std::numeric_limits<float>::infinity();
+    double getDistance(const Vec3f &point) const override {
+        return std::numeric_limits<double>::infinity();
     }
-
-private:
-    Vec3f direction;
 };
 
 // class SphereLight : public Light {
 // public:
-//     SphereLight(float intensity, const Sphere &sphere) : Light{intensity}, sphere(sphere) {}
+//     SphereLight(double intensity, const Sphere &sphere) : Light{intensity}, sphere(sphere) {}
 
 //     Vec3f getDirection(const Vec3f &point) const override {
 //         Vec3f randomPoint = sampleRandomPointOnSphere();
 //         return (randomPoint - point).normalize();
 //     }
 
-//     float getDistance(const Vec3f &point) const override {
+//     double getDistance(const Vec3f &point) const override {
 //         Vec3f randomPoint = sampleRandomPointOnSphere();
 //         return (randomPoint - point).norm();
 //     }
 
 // private:
 //     Vec3f sampleRandomPointOnSphere() const {
-//         float u = static_cast<float>(rand()) / RAND_MAX;
-//         float v = static_cast<float>(rand()) / RAND_MAX;
+//         double u = static_cast<double>(rand()) / RAND_MAX;
+//         double v = static_cast<double>(rand()) / RAND_MAX;
 
-//         float theta = 2 * M_PI * u;
-//         float phi = acos(2 * v - 1);
+//         double theta = 2 * M_PI * u;
+//         double phi = acos(2 * v - 1);
 
-//         float x = sphere.GetCenter().x + sphere.GetRadius() * sin(phi) * cos(theta);
-//         float y = sphere.GetCenter().y + sphere.GetRadius() * sin(phi) * sin(theta);
-//         float z = sphere.GetCenter().z + sphere.GetRadius() * cos(phi);
+//         double x = sphere.GetCenter().x + sphere.GetRadius() * sin(phi) * cos(theta);
+//         double y = sphere.GetCenter().y + sphere.GetRadius() * sin(phi) * sin(theta);
+//         double z = sphere.GetCenter().z + sphere.GetRadius() * cos(phi);
 
 //         return Vec3f(x, y, z);
 //     }
@@ -313,20 +320,20 @@ private:
 // };
 
 Vec3f Reflect(const Vec3f &direction, const Vec3f &N) {
-    return direction - N * 2.f * (direction * N);
+    return direction - N * 2.0 * (direction * N);
 }
 
-Vec3f Refract(const Vec3f &direction, const Vec3f &N, const float &refractiveIndex) {
-    float cosi = -std::max(-1.f, std::min(1.f, direction * N));
-    float etai = 1, etat = refractiveIndex;
+Vec3f Refract(const Vec3f &direction, const Vec3f &N, const double &refractiveIndex) {
+    double cosi = -std::max(-1.0, std::min(1.0, direction * N));
+    double etai = 1, etat = refractiveIndex;
     Vec3f n = N;
     if (cosi < 0) {
         cosi *= -1;
         std::swap(etai, etat);
         n = -N;
     }
-    float eta = etai / etat;
-    float k = 1 - eta * eta * (1 - cosi * cosi);
+    double eta = etai / etat;
+    double k = 1 - eta * eta * (1 - cosi * cosi);
     return k < 0 ? Vec3f(0, 0, 0) : direction * eta + n * (eta * cosi - sqrtf(k));
 }
 
@@ -338,10 +345,10 @@ bool SceneIntersect(
     Vec3f &N,
     Material &material) {
 
-    float spheresDist = std::numeric_limits<float>::max();
+    double spheresDist = std::numeric_limits<double>::max();
 
     for (size_t i = 0; i < shapes.size(); i++) {
-        float dist_i;
+        double dist_i;
         if (shapes[i]->RayIntersect(origin, direction, dist_i) && dist_i < spheresDist) {
             spheresDist = dist_i;
             hit = origin + direction * dist_i;
@@ -363,8 +370,8 @@ Vec3f CastRay(
     Vec3f point, N;
     Material material;
 
-    if (depth > 4 || !SceneIntersect(origin, direction, shapes, point, N, material)) {
-        return Vec3f(0.2, 0.7, 0.8);
+    if (depth > MAX_DEPTH || !SceneIntersect(origin, direction, shapes, point, N, material)) {
+        return BACKGROUND_COLOR;
     }
 
     Vec3f reflectDirection = Reflect(direction, N).normalize();
@@ -381,9 +388,9 @@ Vec3f CastRay(
         refractDirection,
         shapes, lights, depth + 1);
 
-    float diffuseLightIntensity = 0;
-    float specularLightIntensity = 0;
-    float ambientLightIntensity = 0;
+    double diffuseLightIntensity = 0;
+    double specularLightIntensity = 0;
+    double ambientLightIntensity = 0;
     for (const auto &light : lights) {
         if (light->isAmbient()) {
             ambientLightIntensity += light->getIntensity();
@@ -391,15 +398,15 @@ Vec3f CastRay(
         }
 
         Vec3f lightDirection = light->getDirection(point);
-        float lightDistance = light->getDistance(point);
-        float reflect = Reflect(lightDirection, N) * direction;
+        double lightDistance = light->getDistance(point);
+        double reflect = Reflect(lightDirection, N) * direction;
 
         if (IsInShadow(N, point, lightDirection, lightDistance, shapes)) {
             continue;
         }
 
-        diffuseLightIntensity += std::max(0.0f, lightDirection * N) * light->getIntensity();
-        specularLightIntensity += powf(std::max(0.0f, reflect), material.specularExponent) * light->getIntensity();
+        diffuseLightIntensity += std::max(0.0, lightDirection * N) * light->getIntensity();
+        specularLightIntensity += powf(std::max(0.0, reflect), material.specularExponent) * light->getIntensity();
     }
 
     return CalculateFinalColor(
@@ -412,7 +419,7 @@ bool IsInShadow(
     const Vec3f &N,
     const Vec3f &point,
     const Vec3f &lightDirection,
-    const float &lightDistance,
+    const double &lightDistance,
     const std::vector<std::shared_ptr<Shape>> &shapes) {
 
     Vec3f shadowOrigin = AdjustRayOrigin(lightDirection, point, N);
@@ -425,14 +432,14 @@ bool IsInShadow(
 }
 
 Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N) {
-    return direction * N < 0 ? point - N * 1e-3 : point + N * 1e-3;
+    return direction * N < 0 ? point - N * EPSILON : point + N * EPSILON;
 }
 
 Vec3f CalculateFinalColor(
     const Material &material,
-    const float &ambientLightIntensity,
-    const float &diffuseLightIntensity,
-    const float &specularLightIntensity,
+    const double &ambientLightIntensity,
+    const double &diffuseLightIntensity,
+    const double &specularLightIntensity,
     const Vec3f &reflectColor,
     const Vec3f &refractColor) {
 
@@ -444,15 +451,15 @@ Vec3f CalculateFinalColor(
 }
 
 void Render(const std::vector<std::shared_ptr<Shape>> &shapes, const std::vector<std::shared_ptr<Light>> &lights) {
-    const int width = 1280;
+    const int width = 1024;
     const int height = 720;
-    const float fov = M_PI / 2.0;
+    const double fov = M_PI / 2.0;
     std::vector<Vec3f> framebuffer(width * height);
 
     for (size_t j = 0; j < height; j++) {
         for (size_t i = 0; i < width; i++) {
-            float x = (2 * (i + 0.5) / (float)width - 1) * tan(fov / 2.) * width / (float)height;
-            float y = -(2 * (j + 0.5) / (float)height - 1) * tan(fov / 2.);
+            double x = (2 * (i + 0.5) / (double)width - 1) * tan(fov / 2.) * width / (double)height;
+            double y = -(2 * (j + 0.5) / (double)height - 1) * tan(fov / 2.);
             Vec3f direction = Vec3f(x, y, -1).normalize();
 
             framebuffer[i + j * width] = CastRay(Vec3f(0, 0, 0), direction, shapes, lights);
@@ -465,7 +472,7 @@ void Render(const std::vector<std::shared_ptr<Shape>> &shapes, const std::vector
         << width << " " << height << "\n255\n";
     for (size_t i = 0; i < height * width; ++i) {
         for (size_t j = 0; j < 3; j++) {
-            ofs << static_cast<char>(255 * std::max(0.f, std::min(1.f, framebuffer[i][j])));
+            ofs << static_cast<char>(255 * std::max(0.0, std::min(1.0, framebuffer[i][j])));
         }
     }
     ofs.close();
@@ -489,11 +496,11 @@ int main() {
     // shapes.push_back(std::make_shared<Sphere>(Vec3f(-3, 0, -16), 2, ivory));
     // shapes.push_back(std::make_shared<Sphere>(Vec3f(-1.0, -1.5, -12), 2, glass));
     // shapes.push_back(std::make_shared<Sphere>(Vec3f(1.5, -0.5, -18), 3, redRubber));
-    // shapes.push_back(std::make_shared<Sphere>(Vec3f(7, 5, -18), 4, mirror));
-    // shapes.push_back(std::make_shared<Sphere>(Vec3f(-5, -900, -30), 895, ivory));
+    shapes.push_back(std::make_shared<Sphere>(Vec3f(7, 5, -18), 4, mirror));
+    shapes.push_back(std::make_shared<Sphere>(Vec3f(-5, -9000, -30), 8995, ivory));
 
-    shapes.push_back(std::make_shared<Box>(Vec3f(2, 2, 2), Vec3f(-2, -2, -2), mirror));
-    // shapes.push_back(std::make_shared<Box>(Vec3f(2, 2, 2), Vec3f(0, 0, 0), ivory));
+    shapes.push_back(std::make_shared<Box>(Vec3f(-3, 2, -5), Vec3f(-1.0, -1.5, -12), ivory));
+    shapes.push_back(std::make_shared<Box>(Vec3f(-3, 0, -16), Vec3f(5, 5, -20), redRubber));
 
     std::vector<std::shared_ptr<Light>> lights;
     lights.push_back(std::make_shared<PointLight>(PointLight(1.5, Vec3f(-20, 20, 20))));

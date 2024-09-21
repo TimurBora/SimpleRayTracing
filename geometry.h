@@ -24,10 +24,10 @@ private:
     T data_[DIM];
 };
 
-typedef vec<2, float> Vec2f;
-typedef vec<3, float> Vec3f;
+typedef vec<2, double> Vec2f;
+typedef vec<3, double> Vec3f;
 typedef vec<3, int> Vec3i;
-typedef vec<4, float> Vec4f;
+typedef vec<4, double> Vec4f;
 
 template <typename T>
 struct vec<2, T> {
@@ -58,7 +58,7 @@ struct vec<3, T> {
         assert(i < 3);
         return i <= 0 ? x : (1 == i ? y : z);
     }
-    float norm() { return std::sqrt(x * x + y * y + z * z); }
+    double norm() { return std::sqrt(x * x + y * y + z * z); }
     vec<3, T> &normalize(T l = 1) {
         *this = (*this) * (l / norm());
         return *this;

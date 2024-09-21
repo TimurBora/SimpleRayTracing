@@ -6,9 +6,185 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <random>
 #include <vector>
 
 #define M_PI 3.14159265358979323846
+
+struct Material;
+struct Sphere;
+class Light;
+class PointLight;
+class DirectionalLight;
+class SphereLight;
+class AmbientClass;
+
+Vec3f Reflect(const Vec3f &direction, const Vec3f &N);
+Vec3f Refract(const Vec3f &direction, const Vec3f &N, const float &refractiveIndex);
+Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N);
+void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_ptr<Light>> &lights);
+
+bool SceneIntersect(
+    const Vec3f &origin,
+    const Vec3f &direction,
+    const std::vector<Sphere> &spheres,
+    Vec3f &hit,
+    Vec3f &N,
+    Material &material);
+
+Vec3f CastRay(
+    const Vec3f &origin,
+    const Vec3f &direction,
+    const std::vector<Sphere> &spheres,
+    const std::vector<std::shared_ptr<Light>> &lights,
+    size_t depth);
+
+Vec3f CalculateFinalColor(
+    const Material &material,
+    const float &ambientLightIntensity,
+    const float &diffuseLightIntensity,
+    const float &specularLightIntensity,
+    const Vec3f &reflectColor,
+    const Vec3f &refractColor);
+
+bool IsInShadow(
+    const Vec3f &N,
+    const Vec3f &point,
+    const Vec3f &lightDirection,
+    const float &lightDistance,
+    const std::vector<Sphere> &spheres);
+struct Material {
+    Material(
+        const Vec4f &a,
+        const Vec3f &color,
+        const Vec3f &ambient,
+        const float &spec,
+        const float &rf) : albedo(a),
+                           diffuseColor(color),
+                           specularExponent(spec),
+                           refractiveIndex(rf),
+                           ambientColor(ambient) {}
+
+    Material() : albedo(1, 0, 0, 0), diffuseColor(), specularExponent(), refractiveIndex(1.0), ambientColor(0.1, 0.1, 0.1) {}
+
+    Vec4f albedo;
+    Vec3f diffuseColor;
+    Vec3f ambientColor;
+    float specularExponent;
+    float refractiveIndex;
+};
+
+class Shape {
+public:
+    virtual ~Shape() = default; // Virtual destructor for proper cleanup
+    virtual bool RayIntersect(
+        const Vec3f &origin,
+        const Vec3f &direction,
+        float &t0) const = 0; // Pure virtual method
+};
+
+class Sphere : Shape {
+private:
+    Vec3f center;
+    float radius;
+
+    Material material;
+
+public:
+    Sphere(
+        const Vec3f &center,
+        const float &radius,
+        const Material &material) : center(center), radius(radius), material(material) {}
+
+    const Vec3f &GetCenter() const {
+        return center;
+    }
+
+    const Material &GetMaterial() const {
+        return material;
+    }
+
+    const float &GetRadius() const {
+        return radius;
+    }
+
+    bool RayIntersect(
+        const Vec3f &origin,
+        const Vec3f &direction,
+        float &t0) const override {
+
+        Vec3f L = center - origin;
+        float tca = L * direction;
+        float d2 = L * L - tca * tca;
+
+        if (d2 > radius * radius) {
+            return false;
+        }
+
+        float thc = sqrtf(radius * radius - d2);
+        t0 = tca - thc;
+        float t1 = tca + thc;
+
+        if (t0 < 0) {
+            t0 = t1;
+        }
+
+        if (t0 < 0) {
+            return false;
+        }
+        return true;
+    }
+};
+
+class Box : Shape {
+private:
+    Vec3f boxMax;
+    Vec3f boxMin;
+    Material material;
+
+public:
+    Box(
+        Vec3f boxMax,
+        Vec3f boxMin,
+        Material material) : boxMax(boxMax), boxMin(boxMin), material(material) {}
+
+    const Material &GetMaterial() const {
+        return material;
+    }
+
+    bool RayIntersect(
+        const Vec3f &origin,
+        const Vec3f &direction,
+        float &t0) const override {
+
+        Vec3f inversDirection = Vec3f(1.0 / direction.x, 1.0 / direction.y, 1.0 / direction.z);
+
+        float t1 = (boxMin.x - origin.x) * inversDirection.x;
+        float t2 = (boxMax.x - origin.x) * inversDirection.x;
+        float t3 = (boxMin.y - origin.y) * inversDirection.y;
+        float t4 = (boxMax.y - origin.y) * inversDirection.y;
+        float t5 = (boxMin.z - origin.z) * inversDirection.z;
+        float t6 = (boxMax.z - origin.z) * inversDirection.z;
+
+        float tmin = std::max(std::max(std::min(t1, t2), std::min(t3, t4)), std::min(t5, t6));
+        float tmax = std::min(std::min(std::max(t1, t2), std::max(t3, t4)), std::max(t5, t6));
+
+        if (tmax < 0) {
+            return false;
+        }
+
+        if (tmin > tmax) {
+            return false;
+        }
+
+        t0 = tmin;
+        if (tmin < 0.0) {
+            t0 = tmax;
+        }
+
+        return true;
+    }
+};
 
 class Light {
 public:
@@ -71,94 +247,36 @@ private:
     Vec3f direction;
 };
 
-struct Material {
-    Material(
-        const Vec4f &a,
-        const Vec3f &color,
-        const Vec3f &ambient,
-        const float &spec,
-        const float &rf) : albedo(a), diffuseColor(color), specularExponent(spec), refractiveIndex(rf), ambientColor(ambient) {}
-    Material() : albedo(1, 0, 0, 0), diffuseColor(), specularExponent(), refractiveIndex(1.0), ambientColor(0.1, 0.1, 0.1) {}
-    Vec4f albedo;
-    Vec3f diffuseColor;
-    Vec3f ambientColor;
-    float specularExponent;
-    float refractiveIndex;
-};
+// class SphereLight : public Light {
+// public:
+//     SphereLight(float intensity, const Sphere &sphere) : Light{intensity}, sphere(sphere) {}
 
-struct Sphere {
-    Vec3f center;
-    float radius;
+//     Vec3f getDirection(const Vec3f &point) const override {
+//         Vec3f randomPoint = sampleRandomPointOnSphere();
+//         return (randomPoint - point).normalize();
+//     }
 
-    Material material;
+//     float getDistance(const Vec3f &point) const override {
+//         Vec3f randomPoint = sampleRandomPointOnSphere();
+//         return (randomPoint - point).norm();
+//     }
 
-    Sphere(
-        const Vec3f &center,
-        const float &radius,
-        const Material &material) : center(center), radius(radius), material(material) {}
+// private:
+//     Vec3f sampleRandomPointOnSphere() const {
+//         float u = static_cast<float>(rand()) / RAND_MAX;
+//         float v = static_cast<float>(rand()) / RAND_MAX;
 
-    bool RayIntersect(
-        const Vec3f &origin,
-        const Vec3f &direction,
-        float &t0) const {
+//         float theta = 2 * M_PI * u;
+//         float phi = acos(2 * v - 1);
 
-        Vec3f L = center - origin;
-        float tca = L * direction;
-        float d2 = L * L - tca * tca;
+//         float x = sphere.GetCenter().x + sphere.GetRadius() * sin(phi) * cos(theta);
+//         float y = sphere.GetCenter().y + sphere.GetRadius() * sin(phi) * sin(theta);
+//         float z = sphere.GetCenter().z + sphere.GetRadius() * cos(phi);
 
-        if (d2 > radius * radius) {
-            return false;
-        }
-
-        float thc = sqrtf(radius * radius - d2);
-        t0 = tca - thc;
-        float t1 = tca + thc;
-
-        if (t0 < 0) {
-            t0 = t1;
-        }
-
-        if (t0 < 0) {
-            return false;
-        }
-        return true;
-    }
-};
-
-Vec3f Reflect(const Vec3f &direction, const Vec3f &N);
-Vec3f Refract(const Vec3f &direction, const Vec3f &N, const float &refractiveIndex);
-Vec3f AdjustRayOrigin(Vec3f direction, Vec3f point, Vec3f N);
-void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_ptr<Light>> &lights);
-
-bool SceneIntersect(
-    const Vec3f &origin,
-    const Vec3f &direction,
-    const std::vector<Sphere> &spheres,
-    Vec3f &hit,
-    Vec3f &N,
-    Material &material);
-
-Vec3f CastRay(
-    const Vec3f &origin,
-    const Vec3f &direction,
-    const std::vector<Sphere> &spheres,
-    const std::vector<std::shared_ptr<Light>> &lights,
-    size_t depth);
-
-Vec3f CalculateFinalColor(
-    const Material &material,
-    const float &ambientLightIntensity,
-    const float &diffuseLightIntensity,
-    const float &specularLightIntensity,
-    const Vec3f &reflectColor,
-    const Vec3f &refractColor);
-
-bool IsInShadow(
-    const Vec3f &N,
-    const Vec3f &point,
-    const Vec3f &lightDirection,
-    const float &lightDistance,
-    const std::vector<Sphere> &spheres);
+//         return Vec3f(x, y, z);
+//     }
+//     const Sphere &sphere;
+// };
 
 Vec3f Reflect(const Vec3f &direction, const Vec3f &N) {
     return direction - N * 2.f * (direction * N);
@@ -193,8 +311,8 @@ bool SceneIntersect(
         if (spheres[i].RayIntersect(origin, direction, dist_i) && dist_i < spheresDist) {
             spheresDist = dist_i;
             hit = origin + direction * dist_i;
-            N = (hit - spheres[i].center).normalize();
-            material = spheres[i].material;
+            N = (hit - spheres[i].GetCenter()).normalize();
+            material = spheres[i].GetMaterial();
         }
     }
 
@@ -292,8 +410,8 @@ Vec3f CalculateFinalColor(
 }
 
 void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_ptr<Light>> &lights) {
-    const int width = 1024;
-    const int height = 728;
+    const int width = 1280;
+    const int height = 720;
     const float fov = M_PI / 2.0;
     std::vector<Vec3f> framebuffer(width * height);
 
@@ -303,7 +421,7 @@ void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_pt
             float y = -(2 * (j + 0.5) / (float)height - 1) * tan(fov / 2.);
             Vec3f direction = Vec3f(x, y, -1).normalize();
 
-            framebuffer[i + j * width] = CastRay(Vec3f(0, 0, 0), direction, spheres, lights, 2);
+            framebuffer[i + j * width] = CastRay(Vec3f(0, 0, 0), direction, spheres, lights);
         }
     }
 
@@ -321,7 +439,7 @@ void Render(const std::vector<Sphere> &spheres, const std::vector<std::shared_pt
 
 int main() {
     Vec3f ambientColor = Vec3f(0.2, 0.2, 0.2);
-    Material ivory(Vec4f(0.6, 0.3, 0.1, 0.0), Vec3f(0.4, 0.4, 0.3), ambientColor, 50.0, 1.0);
+    Material ivory(Vec4f(0.6, 0.3, 0.3, 0.0), Vec3f(0.4, 0.4, 0.3), ambientColor, 1000.0, 1.0);
     Material glass(Vec4f(0.0, 0.5, 0.1, 0.8), Vec3f(0.6, 0.7, 0.8), ambientColor, 125.0, 1.5);
     Material redRubber(Vec4f(0.9, 0.1, 0.0, 0.0), Vec3f(0.3, 0.1, 0.1), ambientColor, 10.0, 1.0);
     Material mirror(Vec4f(0.0, 10.0, 0.8, 0.0), Vec3f(1.0, 1.0, 1.0), ambientColor, 1425.0, 1.0);
@@ -331,14 +449,25 @@ int main() {
     spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, glass));
     spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, redRubber));
     spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
-    spheres.push_back(Sphere(Vec3f(-5, -9000, -30), 8995, ivory));
+    spheres.push_back(Sphere(Vec3f(-5, -900, -30), 895, ivory));
+
+    std::vector<std::shared_ptr<Shape>> shapes;
+    shapes.push_back(std::make_shared<Sphere>(Vec3f(-3, 0, -16), 2, ivory));
+    shapes.push_back(std::make_shared<Sphere>(Vec3f(-1.0, -1.5, -12), 2, glass));
+    shapes.push_back(std::make_shared<Sphere>(Vec3f(1.5, -0.5, -18), 3, redRubber));
+    shapes.push_back(std::make_shared<Sphere>(Vec3f(7, 5, -18), 4, mirror));
+    shapes.push_back(std::make_shared<Sphere>(Vec3f(-5, -900, -30), 895, ivory));
+
+    shapes.push_back(std::make_shared<Box>(Vec3f(1, 1, 1), Vec3f(-1, -1, -1), mirror));
+    shapes.push_back(std::make_shared<Box>(Vec3f(2, 2, 2), Vec3f(0, 0, 0), ivory));
 
     std::vector<std::shared_ptr<Light>> lights;
     lights.push_back(std::make_shared<PointLight>(PointLight(1.5, Vec3f(-20, 20, 20))));
     lights.push_back(std::make_shared<PointLight>(PointLight(1.8, Vec3f(30, 50, -25))));
     lights.push_back(std::make_shared<PointLight>(PointLight(1.7, Vec3f(30, 20, 30))));
+    // lights.push_back(std::make_shared<SphereLight>(SphereLight(5, Sphere(Vec3f(1.5, -0.5, -18), 3, redRubber))));
     lights.push_back(std::make_shared<AmbientLight>(AmbientLight(0.1)));
-    // lights.push_back(std::make_shared<DirectionalLight>(DirectionalLight(5, Vec3f(-0.57, 0.24, 0.78))));
+    // lights.push_back(std::make_shared<DirectionalLight>(DirectionalLight(0.1, Vec3f(-6, 5, 0.78))));
 
     Render(spheres, lights);
 

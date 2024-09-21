@@ -63,6 +63,13 @@ struct vec<3, T> {
         *this = (*this) * (l / norm());
         return *this;
     }
+
+    vec<3, T> cross(const vec<3, T> &vector) const {
+        return vec<3, T>(
+            y * vector.z - z * vector.y,
+            z * vector.x - x * vector.z,
+            x * vector.y - y * vector.x);
+    }
     T x, y, z;
 };
 

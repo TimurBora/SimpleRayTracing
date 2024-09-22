@@ -19,6 +19,7 @@ struct Material;
 class Shape;
 class Box;
 class Sphere;
+class InfinityPlane;
 class Light;
 class PointLight;
 class DirectionalLight;
@@ -221,9 +222,36 @@ public:
     }
 };
 
-class InfinityPlane : Shape {
+class InfinityPlane : public Shape {
 public:
+    InfinityPlane(
+        const Vec3f &position,
+        const Vec3f &N,
+        const Material &material) : position(position), N((position - N).normalize()), Shape(material) {}
+
+    const Vec3f GetNormal(const Vec3f & /*hitPoint*/) const override {
+        return this->N;
+    }
+
+    bool RayIntersect(
+        const Vec3f &origin,
+        const Vec3f &direction,
+        double &t0) const override {
+
+        double rayPoint = direction * N;
+        if (rayPoint < EPSILON) {
+            return false;
+        }
+
+        double s = (this->N * (this->position - origin)) / rayPoint;
+
+        t0 = (origin + direction * s).norm();
+
+        return true;
+    }
+
 private:
+    Vec3f position;
     Vec3f N;
 };
 
@@ -497,10 +525,12 @@ int main() {
     // shapes.push_back(std::make_shared<Sphere>(Vec3f(-1.0, -1.5, -12), 2, glass));
     // shapes.push_back(std::make_shared<Sphere>(Vec3f(1.5, -0.5, -18), 3, redRubber));
     shapes.push_back(std::make_shared<Sphere>(Vec3f(7, 5, -18), 4, mirror));
-    shapes.push_back(std::make_shared<Sphere>(Vec3f(-5, -9000, -30), 8995, ivory));
+    // shapes.push_back(std::make_shared<Sphere>(Vec3f(-5, -9000, -30), 8995, mirror));
 
     shapes.push_back(std::make_shared<Box>(Vec3f(-3, 2, -5), Vec3f(-1.0, -1.5, -12), ivory));
     shapes.push_back(std::make_shared<Box>(Vec3f(-3, 0, -16), Vec3f(5, 5, -20), redRubber));
+
+    shapes.push_back(std::make_shared<InfinityPlane>(Vec3f(0, -100, 0), Vec3f(24, -25, -3), ivory));
 
     std::vector<std::shared_ptr<Light>> lights;
     lights.push_back(std::make_shared<PointLight>(PointLight(1.5, Vec3f(-20, 20, 20))));

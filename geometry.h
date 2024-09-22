@@ -58,10 +58,14 @@ struct vec<3, T> {
         assert(i < 3);
         return i <= 0 ? x : (1 == i ? y : z);
     }
-    double norm() { return std::sqrt(x * x + y * y + z * z); }
+    double norm() const { return std::sqrt(x * x + y * y + z * z); }
     vec<3, T> &normalize(T l = 1) {
         *this = (*this) * (l / norm());
         return *this;
+    }
+
+    vec<3, T> normalize(T l = 1) const {
+        return (*this) * (l / norm());
     }
 
     vec<3, T> cross(const vec<3, T> &vector) const {
